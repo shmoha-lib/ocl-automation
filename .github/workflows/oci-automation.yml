@@ -1,0 +1,48 @@
+name: oci-retry
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  create-vm:
+    runs-on: ubuntu-latest
+    env:
+      OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
+      OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
+      OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+      OCI_CLI_REGION: ${{ secrets.OCI_CLI_REGION }}
+      OCI_COMPARTMENT_ID: ${{ secrets.OCI_COMPARTMENT_ID }}
+      OCI_SUBNET_ID: ${{ secrets.OCI_SUBNET_ID }}
+      OCI_IMAGE_ID: ${{ secrets.OCI_IMAGE_ID }}
+      OCI_AD: ${{ secrets.OCI_AD }}
+      OCI_SSH_PUBLIC_KEY: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Install OCI CLI
+        run: pip install oci-cli
+
+      - name: Try to create the VM
+        run: |
+          echo "$OCI_SSH_PUBLIC_KEY" > key.pub
+          if oci compute instance launch \
+            --availability-domain "$OCI_AD" \
+            --compartment-id "$OCI_COMPARTMENT_ID" \
+            --subnet-id "$OCI_SUBNET_ID" \
+            --image-id "$OCI_IMAGE_ID" \
+            --shape VM.Standard.A1.Flex \
+            --shape-config '{"ocpus":2,"memoryInGBs":12}' \
+            --boot-volume-size-in-gbs 100 \
+            --assign-public-ip true \
+            --ssh-authorized-keys-file key.pub \
+            --display-name my-free-vm; then
+            echo "VM created. Disabling this workflow."
+            gh workflow disable oci-retry --repo "${{ github.repository }}"
+          else
+            echo "No capacity yet. Will retry on the next run."
+          fi
